@@ -132,20 +132,18 @@ print(embedding.summary())
 
 #siamese L1 Distance class
 # Siamese L1 Distance class
+# Siamese L1 Distance class
 class L1Dist(Layer):
 
     # Init method - inheritance
     def __init__(self, **kwargs):
-        super(L1Dist, self).__init__(**kwargs)
+        super().__init__()
 
     # Magic happens here - similarity calculation
     def call(self, input_embedding, validation_embedding):
-
-
-        # Ensure the tensors are of the same type
-
-        return tf.math.abs(input_embedding - validation_embedding)
-
+        subtraction = tf.math.subtract(input_embedding,validation_embedding)
+        dist = tf.math.abs(subtraction)
+        return tf.squeeze(dist,axis=0)
 
 #Siamese model
 
@@ -211,7 +209,7 @@ def train(data, epochs):
             train_step(batch)
             progbar.update(i+1)
         if e % 10==0:
-            checkpoint.save(file_prefic=checkpoint_prefix)
+            checkpoint.save(file_prefix=checkpoint_prefix)
 
 
 
@@ -221,6 +219,8 @@ EPOCH = 50
 train(train_data,epochs=EPOCH)
 #TODO: the list - list error still persists, need to figure it out
 
+
+#Evaluate the model
 
 
 
