@@ -1,10 +1,9 @@
-import cv2
 import os
 import random
-import numpy as np
-from matplotlib import pyplot as plt
-import uuid
 
+import cv2
+import numpy as np
+from tensorflow.keras.models import load_model
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Layer, Conv2D, Dense, MaxPooling2D, Input, Flatten
 import tensorflow as tf
@@ -44,9 +43,9 @@ ANC_PATH = os.path.join('data', 'anchor')
 
 #load and preprocess data
 
-anchor = tf.data.Dataset.list_files(ANC_PATH + '/*.jpg').take(200)
-positive = tf.data.Dataset.list_files(POS_PATH + '/*.jpg').take(200)
-negative = tf.data.Dataset.list_files(NEG_PATH + '/*.jpg').take(200)
+anchor = tf.data.Dataset.list_files(ANC_PATH + '/*.jpg').take(50)
+positive = tf.data.Dataset.list_files(POS_PATH + '/*.jpg').take(50)
+negative = tf.data.Dataset.list_files(NEG_PATH + '/*.jpg').take(50)
 dir_test = anchor.as_numpy_iterator()
 #
 #
@@ -214,20 +213,59 @@ def train(data, epochs):
 
 
 #TRAIN model
-EPOCH = 50
+EPOCH = 10
 
-train(train_data,epochs=EPOCH)
-#TODO: the list - list error still persists, need to figure it out
+# train(train_data,epochs=EPOCH)
 
 
 #Evaluate the model
 
+test_input, test_val,y_true=test_data.as_numpy_iterator().next()
+y_hat = siamese_model.predict([test_input,test_val])
 
 
+print([1 if pred > 0.5 else 0 for pred in y_hat])
+
+from tensorflow.keras.metrics import Precision, Recall
+m = Precision()
+m.update_state(y_true,y_hat)
+m.result().numpy()
+
+model = load_model('siamese_model.h5')
+#verify the midel
+def verify(model, detection_thresh, verification_threshold):
+    #detection_threshold is the metric above which a prediction is considered positive
+    #verification_threshold is the proportion positive predicitons/ total positive samples
+    results = []
+
+    for img in os.listdir(os.path.join('application_data','verification_images')):
+        input_img = preprocess(os.path.join('application_data','input_img','input_img.jpg'))
+        validation_img = preprocess(os.path.join('application_data','verification_images', img))
+
+        result =  model.predict(list(np.expand_dims([input_img,validation_img],axis=1)))
+        results.append(result)
+
+    detection = np.sum(np.array(results)>detection_thresh)
+    verification = detection / len(os.listdir(os.path.join('application_data','verification_images')))
+    verified = verification > verification_threshold
+
+    return results, verified
 
 
+#real time verification
 
+cam = cv2.VideoCapture(0)
+while True:
+    ret_val, img = cam.read()
+    img = img[10:10 + 500, 900:900 + 500, :]
 
-
-
+    if cv2.waitKey(10) == 118:
+       #save input image to input image folder
+        cv2.imwrite(os.path.join('application_data','input_img','input_img.jpg'),img)
+        results, verified = verify(model,0.5,0.5)
+        print(f'This picture is verified? {verified}')
+    cv2.imshow('my webcam', img)
+    if cv2.waitKey(1) == 27:
+        break  # esc to quit
+cv2.destroyAllWindows()
 
