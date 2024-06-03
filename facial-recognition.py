@@ -47,6 +47,8 @@ anchor = tf.data.Dataset.list_files(ANC_PATH + '/*.jpg').take(50)
 positive = tf.data.Dataset.list_files(POS_PATH + '/*.jpg').take(50)
 negative = tf.data.Dataset.list_files(NEG_PATH + '/*.jpg').take(50)
 dir_test = anchor.as_numpy_iterator()
+
+
 #
 #
 def preprocess(file_path):
@@ -56,11 +58,13 @@ def preprocess(file_path):
     img = img / 255.0
     return img
 
+
 #
 #create labelled dataset
 positives = tf.data.Dataset.zip((anchor, positive, tf.data.Dataset.from_tensor_slices(tf.ones(len(anchor)))))
 negatives = tf.data.Dataset.zip((anchor, negative, tf.data.Dataset.from_tensor_slices(tf.zeros(len(anchor)))))
 data = positives.concatenate(negatives)  #creating a twin unlike a triplet loss
+
 
 #
 # # sample = data.as_numpy_iterator()
@@ -125,6 +129,7 @@ def make_embedding():
 
     return Model(inputs=[inp], outputs=[d1], name='embedding')
 
+
 embedding = make_embedding()
 print(embedding.summary())
 
@@ -140,9 +145,10 @@ class L1Dist(Layer):
 
     # Magic happens here - similarity calculation
     def call(self, input_embedding, validation_embedding):
-        subtraction = tf.math.subtract(input_embedding,validation_embedding)
+        subtraction = tf.math.subtract(input_embedding, validation_embedding)
         dist = tf.math.abs(subtraction)
-        return tf.squeeze(dist,axis=0)
+        return tf.squeeze(dist, axis=0)
+
 
 #Siamese model
 
@@ -163,90 +169,92 @@ def make_siamese_model():
 
     return Model(inputs=[input_image, validation_image], outputs=classifier, name='SiameseNetwork')
 
+
 siamese_model = make_siamese_model()
 print(siamese_model.summary())
 ##PART 5
 
-bcl = tf.losses.BinaryCrossentropy() #loss function
+bcl = tf.losses.BinaryCrossentropy()  #loss function
 
 optimizer = tf.keras.optimizers.Adam(1e-4)
 
 checkpoint_dir = './training_checkpoint'
-checkpoint_prefix = os.path.join(checkpoint_dir,'ckpt')
-checkpoint = tf.train.Checkpoint(opt = optimizer, siamese_model = siamese_model)
+checkpoint_prefix = os.path.join(checkpoint_dir, 'ckpt')
+checkpoint = tf.train.Checkpoint(opt=optimizer, siamese_model=siamese_model)
 
 
 #training step for one batch of data
 @tf.function
 def train_step(batch):
-    with tf.GradientTape() as tape: #gradient tape helps to get the gradients
+    with tf.GradientTape() as tape:  #gradient tape helps to get the gradients
 
-        X = batch[:2] #getting the anchor and positive/megative image
+        X = batch[:2]  #getting the anchor and positive/megative image
 
-        y= batch[2] #getting the labels
+        y = batch[2]  #getting the labels
 
-        y_hat= siamese_model(X,training =True) #calculated value
-        loss = bcl(y,y_hat)  #calculating loss
+        y_hat = siamese_model(X, training=True)  #calculated value
+        loss = bcl(y, y_hat)  #calculating loss
 
     #calculating gradeint
-    grad = tape.gradient(loss,siamese_model.trainable_variables)
+    grad = tape.gradient(loss, siamese_model.trainable_variables)
 
     #calculating updates weights a
-    optimizer.apply_gradients(zip(grad,siamese_model.trainable_variables))
-
+    optimizer.apply_gradients(zip(grad, siamese_model.trainable_variables))
 
     return loss
+
 
 #training loop
 def train(data, epochs):
     #loop through all epochs
     for e in range(epochs):
         print(f'Epoch:{e}/{epochs}')
-        progbar= tf.keras.utils.Progbar(len(data))
+        progbar = tf.keras.utils.Progbar(len(data))
         #loop through each batch
         for i, batch in enumerate(data):
             train_step(batch)
-            progbar.update(i+1)
-        if e % 10==0:
+            progbar.update(i + 1)
+        if e % 10 == 0:
             checkpoint.save(file_prefix=checkpoint_prefix)
 
 
-
-#TRAIN model
-EPOCH = 10
-
+# #TRAIN model
+# EPOCH = 10
+#
 # train(train_data,epochs=EPOCH)
-
+#
 
 #Evaluate the model
+model = tf.keras.models.load_model('app/siamesemodelv2.h5', custom_objects={'L1Dist': L1Dist,
+                                                                        'BCE': tf.keras.losses.BinaryCrossentropy()})
 
-test_input, test_val,y_true=test_data.as_numpy_iterator().next()
-y_hat = siamese_model.predict([test_input,test_val])
-
+test_input, test_val, y_true = test_data.as_numpy_iterator().next()
+y_hat = model.predict([test_input, test_val])
 
 print([1 if pred > 0.5 else 0 for pred in y_hat])
 
 from tensorflow.keras.metrics import Precision, Recall
+
 m = Precision()
-m.update_state(y_true,y_hat)
+m.update_state(y_true, y_hat)
 m.result().numpy()
 
-model = load_model('siamese_model.h5')
+
 #verify the midel
 def verify(model, detection_thresh, verification_threshold):
     #detection_threshold is the metric above which a prediction is considered positive
     #verification_threshold is the proportion positive predicitons/ total positive samples
     results = []
 
-    for img in os.listdir(os.path.join('application_data','verification_images')):
-        input_img = preprocess(os.path.join('application_data','input_img','input_img.jpg'))
-        validation_img = preprocess(os.path.join('application_data','verification_images', img))
+    for img in os.listdir(os.path.join('application_data', 'verification_images')):
+        input_img = preprocess(os.path.join('application_data', 'input_img', 'input_img.jpg'))
+        validation_img = preprocess(os.path.join('application_data', 'verification_images', img))
 
-        result =  model.predict(list(np.expand_dims([input_img,validation_img],axis=1)))
+        result = model.predict(list(np.expand_dims([input_img, validation_img], axis=1)))
         results.append(result)
 
-    detection = np.sum(np.array(results)>detection_thresh)
-    verification = detection / len(os.listdir(os.path.join('application_data','verification_images')))
+    detection = np.sum(np.array(results) > detection_thresh)
+    verification = detection / len(os.listdir(os.path.join('application_data', 'verification_images')))
     verified = verification > verification_threshold
 
     return results, verified
@@ -260,12 +268,11 @@ while True:
     img = img[10:10 + 500, 900:900 + 500, :]
 
     if cv2.waitKey(10) == 118:
-       #save input image to input image folder
-        cv2.imwrite(os.path.join('application_data','input_img','input_img.jpg'),img)
-        results, verified = verify(model,0.5,0.5)
+        #save input image to input image folder
+        cv2.imwrite(os.path.join('application_data', 'input_img', 'input_img.jpg'), img)
+        results, verified = verify(siamese_model, 0.5, 0.5)
         print(f'This picture is verified? {verified}')
     cv2.imshow('my webcam', img)
     if cv2.waitKey(1) == 27:
         break  # esc to quit
 cv2.destroyAllWindows()
-
