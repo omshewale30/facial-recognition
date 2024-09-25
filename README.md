@@ -1,6 +1,3 @@
-Sure, here is an expanded version of the description for your GitHub README:
-
----
 
 # Facial Verification with Siamese Network
 
